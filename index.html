@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>AI Chat – Ionic 8 + Workers AI</title>
+
+  <!-- Ionic Core 8 -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@ionic/core@8/dist/ionic/ionic.esm.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@ionic/core@8/css/ionic.bundle.css" />
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+  <!-- Marked.js & DOMPurify untuk rendering markdown yang aman -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
+  <style>
+    :root {
+      --ion-color-primary: #6366f1;
+      --ion-color-primary-shade: #4f46e5;
+      --ion-color-light: #f8fafc;
+      --ion-color-dark: #1e293b;
+      --ion-color-medium: #94a3b8;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    }
+
+    ion-header {
+      --background: linear-gradient(90deg, var(--ion-color-primary), var(--ion-color-primary-shade));
+      --color: white;
+    }
+
+    ion-content {
+      --background: transparent;
+    }
+
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      overflow: hidden;
+    }
+
+    .chat-messages {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .message {
+      max-width: 80%;
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.5;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      word-break: break-word;
+    }
+
+    .message-sent {
+      align-self: flex-end;
+      background: var(--ion-color-primary);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    .message-received {
+      align-self: flex-start;
+      background: var(--ion-color-light);
+      color: var(--ion-color-dark);
+      border-bottom-left-radius: 4px;
+    }
+
+    /* Style untuk kode di dalam markdown */
+    .message-received pre {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 0.75rem;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 0.5rem 0;
+    }
+    .message-received code {
+      font-family: monospace;
+      background: #e2e8f0;
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.85em;
+    }
+    .message-received pre code {
+      background: transparent;
+      padding: 0;
+    }
+
+    .chat-input {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      background: white;
+      border-top: 1px solid var(--ion-color-medium);
+      gap: 12px;
+    }
+
+    ion-input {
+      flex: 1;
+      --background: #f1f5f9;
+      --border-radius: 12px;
+      --padding-start: 16px;
+      --padding-end: 16px;
+    }
+
+    ion-button {
+      --border-radius: 12px;
+      --padding-top: 8px;
+      --padding-bottom: 8px;
+      height: 44px;
+      width: 44px;
+    }
+
+    .loading-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0,0,0,0.05);
+      padding: 8px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+    }
+    .dot-floating {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: var(--ion-color-primary);
+      display: inline-block;
+      animation: float 1.2s infinite ease-in-out;
+    }
+    .dot-floating:nth-child(2) { animation-delay: 0.2s; }
+    .dot-floating:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); opacity: 0.4; }
+      50% { transform: translateY(-6px); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <ion-app>
+    <ion-header>
+      <ion-toolbar>
+        <ion-buttons slot="start">
+          <ion-button fill="clear" color="light" id="back-button">
+            <i data-lucide="arrow-left"></i>
+          </ion-button>
+        </ion-buttons>
+        <ion-title>AI Assistant</ion-title>
+        <ion-buttons slot="end">
+          <ion-button fill="clear" color="light" id="menu-button">
+            <i data-lucide="more-vertical"></i>
+          </ion-button>
+        </ion-buttons>
+      </ion-toolbar>
+    </ion-header>
+
+    <ion-content>
+      <div class="chat-container">
+        <div class="chat-messages" id="chatMessages">
+          <!-- Pesan sambutan -->
+          <div class="message message-received">
+            👋 Halo! Saya asisten AI. Kirim pesan (bisa minta kode, UI, explain, atau chat biasa).
+          </div>
+        </div>
+
+        <div class="chat-input">
+          <ion-input id="messageInput" placeholder="Ketik pesan..." clear-input></ion-input>
+          <ion-button fill="solid" color="primary" id="sendButton">
+            <i data-lucide="send"></i>
+          </ion-button>
+        </div>
+      </div>
+    </ion-content>
+  </ion-app>
+
+  <script>
+// Ganti URL_BACKEND dengan URL deployment Cloudflare Worker kamu
+// Contoh: "https://ai-assistant.your-subdomain.workers.dev/"
+const BACKEND_URL = 'https://ai-code-worker.warpzone.workers.dev';
+
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('chat-form');
+    const messageInput = document.getElementById('message-input');
+    const sendButton = document.querySelector('button[type="submit"]');
+    const chatContainer = document.getElementById('chat-container');
+
+    // Fungsi untuk menambahkan pesan ke chat
+    function addMessage(role, content) {
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', `${role}-message`, 'mb-4', 'p-3', 'rounded-lg', 'max-w-[80%]');
+        if (role === 'user') {
+            messageDiv.classList.add('ml-auto', 'bg-blue-100', 'dark:bg-blue-900', 'text-gray-800', 'dark:text-gray-200');
+        } else {
+            messageDiv.classList.add('mr-auto', 'bg-gray-100', 'dark:bg-gray-800', 'text-gray-800', 'dark:text-gray-200');
+        }
+
+        // Render markdown sederhana (bisa diganti dengan library seperti marked.js)
+        // Versi sederhana: ganti baris baru dengan <br> dan <strong> untuk bold
+        let formattedContent = content
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold
+            .replace(/\*(.*?)\*/g, '<em>$1</em>') // Italic
+            .replace(/`(.*?)`/g, '<code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">$1</code>') // Inline code
+            .replace(/\n/g, '<br>'); // Baris baru
+
+        messageDiv.innerHTML = `<div class="content">${formattedContent}</div>`;
+        chatContainer.appendChild(messageDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    // Fungsi untuk menangani submit form
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        // Tampilkan pesan user di chat
+        addMessage('user', message);
+        messageInput.value = '';
+        sendButton.disabled = true;
+        sendButton.innerHTML = '<span class="loading loading-spinner loading-xs"></span>';
+
+        try {
+            // Kirim ke backend Worker
+            const response = await fetch(BACKEND_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ message: message }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Network Error' }));
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Unknown error from backend');
+            }
+
+            // Tampilkan respon AI di chat
+            addMessage('ai', data.response);
+
+        } catch (error) {
+            console.error('Chat error:', error);
+            addMessage('ai', `❌ Error: ${error.message || 'Gagal menghubungi AI.'}`);
+        } finally {
+            sendButton.disabled = false;
+            sendButton.innerHTML = '<ion-icon name="send"></ion-icon>';
+        }
+    });
+});
+
+// Inisialisasi Ionicons
+if (window.IonicConfig) {
+    // Jika sudah dimuat, langsung inisialisasi
+    ionicons.init();
+} else {
+    // Tambahkan listener jika belum
+    document.addEventListener('DOMContentLoaded', () => {
+        if (window.ionicons) {
+            ionicons.init();
+        }
+    });
+}
+</script>
+</body>
+</html>
